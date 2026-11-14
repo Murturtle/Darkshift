@@ -1,9 +1,0 @@
-{
-	"permissions": {
-		"allow": [
-			"execute(gradlew.bat :app:testDebugUnitTest:*)",
-			"execute(del app\\src\\main\\res\\values-night\\themes.xml:*)",
-			"execute(del app\\src\\main\\java\\com\\reo\\darkshift\\SystemTheme.kt:*)"
-		]
-	}
-}
