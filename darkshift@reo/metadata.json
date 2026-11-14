@@ -1,0 +1,8 @@
+{
+  "name": "Darkshift",
+  "description": "Optimize power consumption on OLED displays.",
+  "uuid": "darkshift@reo",
+  "shell-version": [
+    "50"
+  ]
+}

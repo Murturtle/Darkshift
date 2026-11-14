@@ -1,0 +1,244 @@
+/* extension.js
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * SPDX-License-Identifier: GPL-2.0-or-later
+ */
+import Clutter from 'gi://Clutter';
+import GObject from 'gi://GObject';
+import Meta from 'gi://Meta';
+import Shell from 'gi://Shell';
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {QuickToggle, SystemIndicator} from 'resource:///org/gnome/shell/ui/quickSettings.js';
+
+// How hard blacks get crushed towards true black (0 = untouched, 1 = max).
+const BLACK_BOOST = 0.55;
+// How much of the blue channel's energy gets moved onto red/green instead
+// of being displayed, so fewer blue sub-pixels have to light up.
+const BLUE_SHIFT = 0.35;
+// How much of the red channel's energy gets moved onto green instead of
+// being displayed, so fewer red sub-pixels have to light up.
+const RED_SHIFT = 0.2;
+// How much extra darkening is applied to near-neutral (gray) colors,
+// on top of the black crush above (1.0 = untouched, lower = darker).
+const GRAY_DARKEN = 0.7;
+
+const EFFECT_NAME = 'darkshift';
+
+// Apps in these freedesktop.org categories already rely on accurate,
+// untouched colors (video playback, image/video editing, games), so the
+// filter is skipped for them.
+const EXCLUDED_CATEGORIES = ['Video', 'AudioVideo', 'Graphics', 'Game'];
+
+const DarkshiftEffect = GObject.registerClass(
+class DarkshiftEffect extends Clutter.ShaderEffect {
+    vfunc_get_static_shader_source() {
+        return `
+            uniform sampler2D tex;
+            uniform float black_boost;
+            uniform float blue_shift;
+            uniform float red_shift;
+            uniform float gray_darken;
+
+            void main() {
+                vec4 color = texture2D(tex, cogl_tex_coord_in[0].st);
+
+                /* Crush blacks: a gentle power curve pushes dark tones
+                 * closer to true black without blowing out highlights. */
+                color.rgb = pow(color.rgb, vec3(1.0 + black_boost));
+
+                /* Darken grays further: the less saturated a color is,
+                 * the closer it is to a neutral gray, so push it darker
+                 * on top of the black crush above. */
+                float maxChannel = max(color.r, max(color.g, color.b));
+                float minChannel = min(color.r, min(color.g, color.b));
+                float grayness = 1.0 - (maxChannel - minChannel);
+                color.rgb *= mix(1.0, gray_darken, grayness);
+
+                /* Shift light away from the blue sub-pixel: take some of
+                 * the blue channel's energy and redistribute it onto red
+                 * and green, which is where OLEDs are more efficient. */
+                float removedBlue = color.b * blue_shift;
+                color.b -= removedBlue;
+                color.r += removedBlue * 0.6;
+                color.g += removedBlue * 0.4;
+
+                /* Shift light away from the red sub-pixel too, moving it
+                 * onto green. */
+                float removedRed = color.r * red_shift;
+                color.r -= removedRed;
+                color.g += removedRed;
+
+                cogl_color_out = color * cogl_color_in;
+            }
+        `;
+    }
+
+    vfunc_paint_target(node, paintContext) {
+        this.set_uniform_value('tex', 0);
+        this.set_uniform_value('black_boost', BLACK_BOOST);
+        this.set_uniform_value('blue_shift', BLUE_SHIFT);
+        this.set_uniform_value('red_shift', RED_SHIFT);
+        this.set_uniform_value('gray_darken', GRAY_DARKEN);
+        super.vfunc_paint_target(node, paintContext);
+    }
+});
+
+const DarkshiftToggle = GObject.registerClass(
+class DarkshiftToggle extends QuickToggle {
+    constructor() {
+        super({
+            title: _('Darkshift'),
+            iconName: 'preferences-desktop-display-symbolic',
+            toggleMode: true,
+        });
+    }
+});
+
+const DarkshiftIndicator = GObject.registerClass(
+class DarkshiftIndicator extends SystemIndicator {
+    constructor() {
+        super();
+
+        this._enabled = false;
+        this._windowTracker = Shell.WindowTracker.get_default();
+        this._actorAddedId = 0;
+        this._actorRemovedId = 0;
+        this._appChangedId = 0;
+
+        this._indicator = this._addIndicator();
+        this._indicator.iconName = 'preferences-desktop-display-symbolic';
+
+        this._toggle = new DarkshiftToggle();
+        this._toggle.bind_property('checked',
+            this._indicator, 'visible',
+            GObject.BindingFlags.SYNC_CREATE);
+        this._toggle.connect('notify::checked', toggle => {
+            if (toggle.checked)
+                this._enableEffect();
+            else
+                this._disableEffect();
+        });
+        this.quickSettingsItems.push(this._toggle);
+    }
+
+    // Apps whose primary purpose is accurate color (video, graphics,
+    // games) should be left untouched.
+    _shouldSkip(app) {
+        if (!app)
+            return false;
+
+        const appInfo = app.get_app_info();
+        const categoriesString = appInfo ? appInfo.get_categories() : null;
+        if (!categoriesString)
+            return false;
+
+        const categories = categoriesString.split(';').filter(c => c.length > 0);
+        return categories.some(c => EXCLUDED_CATEGORIES.includes(c));
+    }
+
+    _addEffectToActor(windowActor) {
+        try {
+            if (!(windowActor instanceof Meta.WindowActor))
+                return;
+
+            if (windowActor.get_effect(EFFECT_NAME))
+                return;
+
+            const metaWindow = windowActor.get_meta_window();
+            const app = metaWindow ? this._windowTracker.get_window_app(metaWindow) : null;
+            if (this._shouldSkip(app))
+                return;
+
+            windowActor.add_effect_with_name(EFFECT_NAME, new DarkshiftEffect());
+        } catch (e) {
+            console.error(`Darkshift: failed to apply effect to window: ${e}`);
+        }
+    }
+
+    _removeEffectFromActor(windowActor) {
+        try {
+            if (windowActor instanceof Meta.WindowActor)
+                windowActor.remove_effect_by_name(EFFECT_NAME);
+        } catch (e) {
+            console.error(`Darkshift: failed to remove effect from window: ${e}`);
+        }
+    }
+
+    _refreshAllActors() {
+        global.get_window_actors().forEach(actor => {
+            this._removeEffectFromActor(actor);
+            this._addEffectToActor(actor);
+        });
+    }
+
+    _enableEffect() {
+        if (this._enabled)
+            return;
+        this._enabled = true;
+
+        global.get_window_actors().forEach(actor => this._addEffectToActor(actor));
+
+        this._actorAddedId = global.window_group.connect('child-added',
+            (_group, actor) => this._addEffectToActor(actor));
+        this._actorRemovedId = global.window_group.connect('child-removed',
+            (_group, actor) => this._removeEffectFromActor(actor));
+        // An app's identity can resolve after its window first appears
+        // (e.g. while it is still starting up), so re-check assignments.
+        this._appChangedId = this._windowTracker.connect('tracked-windows-changed',
+            () => this._refreshAllActors());
+    }
+
+    _disableEffect() {
+        if (!this._enabled)
+            return;
+        this._enabled = false;
+
+        global.get_window_actors().forEach(actor => this._removeEffectFromActor(actor));
+
+        if (this._actorAddedId) {
+            global.window_group.disconnect(this._actorAddedId);
+            this._actorAddedId = 0;
+        }
+        if (this._actorRemovedId) {
+            global.window_group.disconnect(this._actorRemovedId);
+            this._actorRemovedId = 0;
+        }
+        if (this._appChangedId) {
+            this._windowTracker.disconnect(this._appChangedId);
+            this._appChangedId = 0;
+        }
+    }
+
+    destroy() {
+        this._disableEffect();
+        super.destroy();
+    }
+});
+
+export default class DarkshiftExtension extends Extension {
+    enable() {
+        this._indicator = new DarkshiftIndicator();
+        Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
+    }
+
+    disable() {
+        this._indicator.quickSettingsItems.forEach(item => item.destroy());
+        this._indicator.destroy();
+        this._indicator = null;
+    }
+}
