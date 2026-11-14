@@ -1,0 +1,6 @@
+<resources>
+    <style name="Darkshift.SliderLabel">
+        <item name="android:layout_marginTop">16dp</item>
+        <item name="android:textAppearance">?attr/textAppearanceSubtitle2</item>
+    </style>
+</resources>

@@ -1,0 +1,62 @@
+package com.reo.darkshift
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class OverlayColorTest {
+    private fun alpha(argb: Int) = argb ushr 24
+    private fun red(argb: Int) = (argb shr 16) and 0xFF
+    private fun green(argb: Int) = (argb shr 8) and 0xFF
+    private fun blue(argb: Int) = argb and 0xFF
+
+    @Test
+    fun maxValueScalesBrightnessFromThirtyThreePercentToFull() {
+        val none = DarkshiftConfig(darkness = 0f, maxValue = 0f)
+        val full = DarkshiftConfig(darkness = 0f, maxValue = 1f)
+        assertEquals(0.33f, OverlayColor.brightness(none), 1e-6f)
+        assertEquals(1f, OverlayColor.brightness(full), 1e-6f)
+    }
+
+    @Test
+    fun darknessDimsFurtherAndNeverBelowThePositiveRange() {
+        val config = DarkshiftConfig(darkness = 1f, maxValue = 0f)
+        assertEquals(0.33f * 0.6f, OverlayColor.brightness(config), 1e-6f)
+    }
+
+    @Test
+    fun overlayBlendsToTheRequestedBrightness() {
+        // Blending white through the overlay must give back the brightness the sliders ask for.
+        val config = DarkshiftConfig(darkness = 0.5f, maxValue = 0.5f, colorShift = 0f)
+        val argb = OverlayColor.argb(config)
+        val a = alpha(argb) / 255f
+        val whiteGreen = (1f - a) + (green(argb) / 255f) * a
+        val whiteRed = (1f - a) + (red(argb) / 255f) * a
+        assertEquals(OverlayColor.brightness(config) + OverlayColor.TINT_ALPHA * (1f - (1f - OverlayColor.brightness(config))) ,
+            whiteGreen, 0.02f)
+        assertEquals(OverlayColor.brightness(config) * (1f - OverlayColor.TINT_ALPHA), whiteRed, 0.02f)
+    }
+
+    @Test
+    fun colorShiftMovesTintFromGreenToRed() {
+        val green = OverlayColor.argb(DarkshiftConfig(colorShift = 0f))
+        val red = OverlayColor.argb(DarkshiftConfig(colorShift = 1f))
+        assertTrue(green(green) > 0 && red(green) == 0)
+        assertTrue(red(red) > 0 && green(red) == 0)
+        assertEquals(0, blue(green))
+        assertEquals(0, blue(red))
+    }
+
+    @Test
+    fun monotoneSnapsToPureGreenOrRed() {
+        val nearGreen = OverlayColor.argb(DarkshiftConfig(monotone = true, colorShift = 0.4f))
+        val nearRed = OverlayColor.argb(DarkshiftConfig(monotone = true, colorShift = 0.6f))
+        assertEquals(0, red(nearGreen))
+        assertEquals(0, green(nearRed))
+    }
+
+    @Test
+    fun defaultsProduceAVisibleOverlay() {
+        assertTrue(alpha(OverlayColor.argb(DarkshiftConfig())) > 0)
+    }
+}

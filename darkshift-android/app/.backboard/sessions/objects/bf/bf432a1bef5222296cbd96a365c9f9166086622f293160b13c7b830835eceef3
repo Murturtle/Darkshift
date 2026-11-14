@@ -1,0 +1,26 @@
+package com.reo.darkshift
+
+import kotlin.math.roundToInt
+
+/**
+ * The one translucent color the overlay is filled with: pure green (0, 255, 0) or pure red
+ * (255, 0, 0), never mixed and never with blue.
+ *
+ * An overlay can only alpha-blend over the screen (out = screen * (1 - a) + color * a), so it
+ * cannot remove blue from what apps draw; it can only bury it under a single-color layer. The
+ * intensity is that layer's opacity. It also lights true black in the chosen color.
+ */
+object OverlayColor {
+    /** Intensity range the slider covers: faint at the low end, nearly opaque at the top. */
+    const val MIN_INTENSITY = 0.05f
+    const val MAX_INTENSITY = 0.9f
+
+    private const val GREEN = 0x0000FF00
+    private const val RED = 0x00FF0000
+
+    /** ARGB for the overlay view's background. */
+    fun argb(config: DarkshiftConfig): Int {
+        val alpha = (config.intensity.coerceIn(MIN_INTENSITY, MAX_INTENSITY) * 255f).roundToInt()
+        return (alpha shl 24) or (if (config.red) RED else GREEN)
+    }
+}

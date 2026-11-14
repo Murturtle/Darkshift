@@ -1,0 +1,51 @@
+package com.reo.darkshift
+
+import android.content.Context
+import android.content.SharedPreferences
+
+data class DarkshiftConfig(
+    val enabled: Boolean = false,
+    /** False = green, true = red. */
+    val red: Boolean = false,
+    /** Opacity of the green/red layer; see [OverlayColor]. */
+    val intensity: Float = 0.33f,
+    /** Android's own monochrome filter. It flattens the overlay's color, so the overlay is skipped. */
+    val monochrome: Boolean = false,
+)
+
+class DarkshiftSettings(context: Context) {
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    var config: DarkshiftConfig
+        get() = DarkshiftConfig(
+            enabled = prefs.getBoolean(KEY_ENABLED, false),
+            red = prefs.getBoolean(KEY_RED, false),
+            intensity = prefs.getFloat(KEY_INTENSITY, DarkshiftConfig().intensity),
+            monochrome = prefs.getBoolean(KEY_MONOCHROME, false),
+        )
+        set(value) = prefs.edit()
+            .putBoolean(KEY_ENABLED, value.enabled)
+            .putBoolean(KEY_RED, value.red)
+            .putFloat(KEY_INTENSITY, value.intensity)
+            .putBoolean(KEY_MONOCHROME, value.monochrome)
+            .apply()
+
+    fun update(change: (DarkshiftConfig) -> DarkshiftConfig) {
+        config = change(config)
+    }
+
+    fun registerListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+
+    fun unregisterListener(listener: SharedPreferences.OnSharedPreferenceChangeListener) =
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
+
+    private companion object {
+        const val PREFS_NAME = "darkshift"
+        const val KEY_ENABLED = "enabled"
+        const val KEY_RED = "red"
+        const val KEY_INTENSITY = "intensity"
+        const val KEY_MONOCHROME = "monochrome"
+    }
+}

@@ -1,0 +1,66 @@
+package com.reo.darkshift
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.Settings
+
+/**
+ * Switches Android's own theme to dark while Darkshift is on: the system dark theme, plus "force
+ * dark" so apps without a dark theme get one. The previous values are saved and put back on
+ * [restore].
+ *
+ * Writing these secure settings needs WRITE_SECURE_SETTINGS, which only adb can grant
+ * (`adb shell pm grant com.reo.darkshift android.permission.WRITE_SECURE_SETTINGS`).
+ */
+class SystemTheme(private val context: Context) {
+    private val resolver = context.contentResolver
+    private val saved = context.getSharedPreferences(SAVED_PREFS_NAME, Context.MODE_PRIVATE)
+
+    val canWrite: Boolean
+        get() = context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    fun apply() {
+        if (!canWrite) return
+        for ((key, value) in DARK_SETTINGS) {
+            // Only remember the user's own value, never one we wrote ourselves.
+            if (!saved.contains(key)) {
+                saved.edit().putInt(key, Settings.Secure.getInt(resolver, key, UNSET)).commit()
+            }
+            Settings.Secure.putInt(resolver, key, value)
+        }
+    }
+
+    fun restore() {
+        if (!canWrite) return
+        for (key in DARK_SETTINGS.keys + LEGACY_SAVED_KEYS) {
+            if (!saved.contains(key)) continue
+            val previous = saved.getInt(key, UNSET)
+            if (previous == UNSET) {
+                Settings.Secure.putString(resolver, key, null)
+            } else {
+                Settings.Secure.putInt(resolver, key, previous)
+            }
+            saved.edit().remove(key).commit()
+        }
+    }
+
+    private companion object {
+        const val SAVED_PREFS_NAME = "darkshift_system_theme"
+        const val UNSET = Int.MIN_VALUE
+
+        const val UI_NIGHT_MODE = "ui_night_mode"
+        const val FORCE_DARK = "accessibility_force_invert_color_enabled"
+        const val NIGHT_MODE_YES = 2
+
+        val DARK_SETTINGS = mapOf(UI_NIGHT_MODE to NIGHT_MODE_YES, FORCE_DARK to 1)
+
+        // Earlier builds also switched on monochrome. Never written any more, but a phone that
+        // ran one may still hold its saved values, so they are put back on restore.
+        val LEGACY_SAVED_KEYS = listOf(
+            "accessibility_display_daltonizer",
+            "accessibility_display_daltonizer_enabled",
+        )
+    }
+}

@@ -1,0 +1,19 @@
+<resources>
+    <string name="app_name">Darkshift</string>
+    <string name="enable_darkshift">Enable Darkshift</string>
+    <string name="mode_multicolor">Multicolor</string>
+    <string name="mode_monotone">Monotone</string>
+    <string name="darkness">Darkness</string>
+    <string name="green_red">Green \u2194 Red</string>
+    <string name="green">Green</string>
+    <string name="red">Red</string>
+    <string name="max_value">Max value</string>
+    <string name="reset_to_defaults">Reset to defaults</string>
+    <string name="service_off_message">Darkshift draws its filter through an accessibility service. Turn on \"Darkshift\" in the accessibility settings to use it.</string>
+    <string name="open_accessibility_settings">Open accessibility settings</string>
+    <string name="overlay_note">Darkshift dims and tints the whole screen with an overlay. Unlike the desktop version it cannot treat blacks, grays and colors differently or recolor individual pixels, so Darkness is a mild overall dim and a tint lifts black very slightly.</string>
+    <string name="tile_on">On</string>
+    <string name="tile_off">Off</string>
+    <string name="tile_needs_service">Needs accessibility</string>
+    <string name="accessibility_service_description">Dims and tints the screen with an overlay to save power on OLED displays. It does not read or change anything on screen.</string>
+</resources>

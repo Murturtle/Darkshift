@@ -1,0 +1,82 @@
+package com.reo.darkshift
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class OverlayColorTest {
+    private fun alpha(argb: Int) = argb ushr 24
+    private fun red(argb: Int) = (argb shr 16) and 0xFF
+    private fun green(argb: Int) = (argb shr 8) and 0xFF
+    private fun blue(argb: Int) = argb and 0xFF
+
+    @Test
+    fun maxValueScalesBrightnessFromItsMinimumToFull() {
+        val low = DarkshiftConfig(darkness = 0f, maxValue = 0f)
+        val full = DarkshiftConfig(darkness = 0f, maxValue = 1f)
+        assertEquals(OverlayColor.MIN_MAX_VALUE, OverlayColor.brightness(low), 1e-6f)
+        assertEquals(1f, OverlayColor.brightness(full), 1e-6f)
+    }
+
+    @Test
+    fun darknessDimsOnTopOfMaxValue() {
+        val config = DarkshiftConfig(darkness = 1f, maxValue = 1f)
+        assertEquals(1f - OverlayColor.MAX_DARKNESS_DIM, OverlayColor.brightness(config), 1e-6f)
+    }
+
+    @Test
+    fun brightnessNeverDropsBelowTheFloor() {
+        val config = DarkshiftConfig(darkness = 1f, maxValue = 0f)
+        assertEquals(OverlayColor.MIN_BRIGHTNESS, OverlayColor.brightness(config), 1e-6f)
+    }
+
+    @Test
+    fun blackPixelsStayNearlyBlack() {
+        // Black through the overlay is just the tint's contribution: premultiplied channel * alpha.
+        for (shift in listOf(0f, 0.5f, 1f)) {
+            val argb = OverlayColor.argb(DarkshiftConfig(monotone = true, colorShift = shift))
+            val a = alpha(argb) / 255f
+            val lift = maxOf(red(argb), green(argb)) * a
+            assertTrue("black lifted to $lift/255", lift <= 8f)
+        }
+    }
+
+    @Test
+    fun overlayBlendsWhiteToTheRequestedBrightness() {
+        // Fully green tint: the green channel of white must come out at exactly the requested
+        // brightness, and red is reduced by the tint share on top of that.
+        val config = DarkshiftConfig(darkness = 0.5f, maxValue = 0.5f, colorShift = 0f)
+        val argb = OverlayColor.argb(config)
+        val a = alpha(argb) / 255f
+        val outGreen = (1f - a) + (green(argb) / 255f) * a
+        val outRed = (1f - a) + (red(argb) / 255f) * a
+        val brightness = OverlayColor.brightness(config)
+        assertEquals(brightness, outGreen, 0.01f)
+        assertEquals(brightness * (1f - OverlayColor.TINT_ALPHA), outRed, 0.01f)
+    }
+
+    @Test
+    fun colorShiftMovesTintFromGreenToRed() {
+        val greenTint = OverlayColor.argb(DarkshiftConfig(colorShift = 0f))
+        val redTint = OverlayColor.argb(DarkshiftConfig(colorShift = 1f))
+        assertTrue(green(greenTint) > 0)
+        assertEquals(0, red(greenTint))
+        assertTrue(red(redTint) > 0)
+        assertEquals(0, green(redTint))
+        assertEquals(0, blue(greenTint))
+        assertEquals(0, blue(redTint))
+    }
+
+    @Test
+    fun monotoneSnapsToPureGreenOrRed() {
+        val nearGreen = OverlayColor.argb(DarkshiftConfig(monotone = true, colorShift = 0.4f))
+        val nearRed = OverlayColor.argb(DarkshiftConfig(monotone = true, colorShift = 0.6f))
+        assertEquals(0, red(nearGreen))
+        assertEquals(0, green(nearRed))
+    }
+
+    @Test
+    fun defaultsProduceAVisibleOverlay() {
+        assertTrue(alpha(OverlayColor.argb(DarkshiftConfig())) > 0)
+    }
+}
