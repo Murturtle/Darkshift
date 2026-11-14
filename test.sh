@@ -1,0 +1,1 @@
+sleep 10; for i in {1..10}; do awk '{print $1/1000000}' /sys/class/power_supply/BAT0/voltage_now /sys/class/power_supply/BAT0/current_now | paste -sd '*' | bc -l; sleep 1; done | awk '{sum+=$1} END {printf "Average: %.2f W\n", sum/NR}'
